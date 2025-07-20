@@ -1,0 +1,60 @@
+version: '3'
+
+vars:
+  BINARY_NAME: sqlite-mcp
+  BUILD_DIR: build
+  MAIN_PATH: cmd/server/main.go
+
+tasks:
+  fmt:
+    desc: Tidy modules and format code
+    cmds:
+      - go mod tidy
+      - go fmt ./...
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run
+    preconditions:
+      - sh: command -v golangci-lint
+        msg: "golangci-lint is not installed."
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - go test ./...
+
+  check:
+    desc: Run fmt, lint and test
+    deps: [fmt, lint, test]
+    cmds:
+      - go test ./...
+
+  build-example-db:
+    desc: Create example db from example.sql
+    cmds:
+      - rm -f {{.BUILD_DIR}}/example.db
+      - mkdir -p {{.BUILD_DIR}}
+      - sqlite3 {{.BUILD_DIR}}/example.db < example.sql
+    sources:
+      - example.sql
+    generates:
+      - example.db
+
+  run-dev:
+    desc: Run from source with example db
+    deps: [check, build-example-db]
+    cmds:
+      - go run {{.MAIN_PATH}} --database {{.BUILD_DIR}}/example.db
+
+  build:
+    desc: Build the binary
+    deps: [check, build-example-db]
+    cmds:
+      - go build -o {{.BUILD_DIR}}/{{.BINARY_NAME}} {{.MAIN_PATH}}
+
+  docker-build:
+    desc: Build Docker image
+    cmds:
+      - docker build -t sqlite-mcp-server .
