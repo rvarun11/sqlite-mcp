@@ -2,21 +2,21 @@ package handlers
 
 import (
 	"context"
-	"github.com/rvarun11/sqlite-mcp/internal/database"
 	"github.com/rvarun11/sqlite-mcp/internal/models"
+	"github.com/rvarun11/sqlite-mcp/internal/repository"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"go.uber.org/zap"
 )
 
 type MCPHandler struct {
-	db     *database.SQLiteDB
+	repo   *repository.SQLiteDB
 	logger *zap.SugaredLogger
 }
 
-func NewMCPHandler(db *database.SQLiteDB, logger *zap.SugaredLogger) *MCPHandler {
+func NewMCPHandler(repo *repository.SQLiteDB, logger *zap.SugaredLogger) *MCPHandler {
 	return &MCPHandler{
-		db:     db,
+		repo:   repo,
 		logger: logger,
 	}
 }
@@ -24,7 +24,7 @@ func NewMCPHandler(db *database.SQLiteDB, logger *zap.SugaredLogger) *MCPHandler
 func (h *MCPHandler) GetSchema(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	h.logger.Info("Handling listTables request")
 
-	tables, err := h.db.GetSchema()
+	tables, err := h.repo.GetSchema()
 	if err != nil {
 		h.logger.Error("Failed to list tables", err)
 		return &mcp.CallToolResult{
@@ -64,7 +64,7 @@ func (h *MCPHandler) QueryDatabase(ctx context.Context, request mcp.CallToolRequ
 		}, nil
 	}
 
-	result, err := h.db.Query(sql)
+	result, err := h.repo.Query(sql)
 	if err != nil {
 		h.logger.Error("Query execution failed: ", err)
 		return &mcp.CallToolResult{
@@ -105,7 +105,7 @@ func (h *MCPHandler) ExecuteDatabase(ctx context.Context, request mcp.CallToolRe
 		}, nil
 	}
 
-	result, err := h.db.Execute(sql)
+	result, err := h.repo.Execute(sql)
 	if err != nil {
 		h.logger.Error("Statement execution failed: ", err)
 		return &mcp.CallToolResult{

@@ -1,4 +1,4 @@
-package database
+package repository
 
 import (
 	"database/sql"
@@ -11,6 +11,8 @@ import (
 	"gorm.io/gorm"
 	// "gorm.io/gorm/logger"
 )
+
+var _ Repository = (*SQLiteDB)(nil)
 
 type SQLiteDB struct {
 	db     *gorm.DB

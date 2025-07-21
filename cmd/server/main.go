@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 	"github.com/rvarun11/sqlite-mcp/internal/config"
-	"github.com/rvarun11/sqlite-mcp/internal/database"
 	"github.com/rvarun11/sqlite-mcp/internal/handlers"
 	"github.com/rvarun11/sqlite-mcp/internal/logger"
+	"github.com/rvarun11/sqlite-mcp/internal/repository"
 	"os"
 
 	"context"
@@ -60,14 +60,14 @@ func runServer(cmd *cobra.Command, args []string) {
 	logger.Infof("Starting SQLite MCP Server: %v", dbPath)
 
 	// Initialize database
-	db, err := database.NewSQLiteDB(cfg.DatabasePath, logger)
+	repo, err := repository.NewSQLiteDB(cfg.DatabasePath, logger)
 	if err != nil {
 		logger.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer db.Close()
+	defer repo.Close()
 
 	// Initialize MCP handler
-	mcpHandler := handlers.NewMCPHandler(db, logger)
+	mcpHandler := handlers.NewMCPHandler(repo, logger)
 
 	mcpServer := server.NewMCPServer(
 		"sqlite-mcp",
@@ -83,7 +83,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	)
 	mcpServer.AddTool(listTablesTool, mcpHandler.GetSchema)
 
-	// Query Database Tool - Requires SQL parameter
+	// Query Database Tool
 	queryDatabaseTool := mcp.NewTool("query",
 		mcp.WithDescription("Execute SELECT queries against the SQLite database. Only SELECT, WITH, and EXPLAIN queries are allowed."),
 		mcp.WithString("sql",
@@ -98,7 +98,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	)
 	mcpServer.AddTool(queryDatabaseTool, mcpHandler.QueryDatabase)
 
-	// Execute Database Tool - Requires SQL parameter
+	// Execute Database Tool
 	executeDatabaseTool := mcp.NewTool("execute",
 		mcp.WithDescription("Execute DDL/DML operations (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, etc.) against the SQLite database. SELECT queries are not allowed - use queryDatabase instead."),
 		mcp.WithString("sql",
