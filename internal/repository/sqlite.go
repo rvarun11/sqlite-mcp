@@ -3,48 +3,41 @@ package repository
 import (
 	"database/sql"
 	"fmt"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/rvarun11/sqlite-mcp/internal/models"
 	"strings"
 
 	"go.uber.org/zap"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-	// "gorm.io/gorm/logger"
 )
 
 var _ Repository = (*SQLiteDB)(nil)
 
 type SQLiteDB struct {
-	db     *gorm.DB
-	sqlDB  *sql.DB
+	db     *sql.DB
 	logger *zap.SugaredLogger
 }
 
 func NewSQLiteDB(dbPath string, logger *zap.SugaredLogger) (*SQLiteDB, error) {
-	// Configure GORM with custom logger
-	// gormConfig := &gorm.Config{
-	// 	Logger: logger.Default.LogMode(logger.Silent), // We'll use zap for logging
-	// }
-
-	db, err := gorm.Open(sqlite.Open(dbPath))
+	// Open SQLite database directly
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	sqlDB, err := db.DB()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
+	// Test the connection
+	if err := db.Ping(); err != nil {
+		db.Close() // Clean up on ping failure
+		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
 	// Configure connection pool
-	sqlDB.SetMaxOpenConns(25)
-	sqlDB.SetMaxIdleConns(5)
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
 
 	logger.Infof("Connected to SQLite database: %v", dbPath)
 
 	return &SQLiteDB{
 		db:     db,
-		sqlDB:  sqlDB,
 		logger: logger,
 	}, nil
 }
@@ -53,9 +46,28 @@ func (s *SQLiteDB) GetSchema() ([]models.Table, error) {
 	s.logger.Debug("Get database schema")
 
 	var tableNames []string
-	err := s.db.Raw("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").Scan(&tableNames).Error
+
+	// Convert GORM query to direct SQL
+	rows, err := s.db.Query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
 	if err != nil {
 		s.logger.Error("Failed to retrieve table names", zap.Error(err))
+		return nil, fmt.Errorf("failed to retrieve table information")
+	}
+	defer rows.Close()
+
+	// Scan the results
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err != nil {
+			s.logger.Error("Failed to scan table name", zap.Error(err))
+			continue
+		}
+		tableNames = append(tableNames, tableName)
+	}
+
+	// Check for errors during iteration
+	if err := rows.Err(); err != nil {
+		s.logger.Error("Error during table name iteration", zap.Error(err))
 		return nil, fmt.Errorf("failed to retrieve table information")
 	}
 
@@ -77,7 +89,7 @@ func (s *SQLiteDB) GetSchema() ([]models.Table, error) {
 func (s *SQLiteDB) getTableInfo(tableName string) (*models.Table, error) {
 	// Get column information
 	var columns []models.Column
-	rows, err := s.sqlDB.Query(fmt.Sprintf("PRAGMA table_info(%s)", tableName))
+	rows, err := s.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", tableName))
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +122,7 @@ func (s *SQLiteDB) getTableInfo(tableName string) (*models.Table, error) {
 
 	// Get index information
 	var indexes []string
-	indexRows, err := s.sqlDB.Query(fmt.Sprintf("PRAGMA index_list(%s)", tableName))
+	indexRows, err := s.db.Query(fmt.Sprintf("PRAGMA index_list(%s)", tableName))
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +146,7 @@ func (s *SQLiteDB) getTableInfo(tableName string) (*models.Table, error) {
 	}
 
 	var foreignKeys []models.ForeignKey
-	fkRows, err := s.sqlDB.Query(fmt.Sprintf("PRAGMA foreign_key_list(%s)", tableName))
+	fkRows, err := s.db.Query(fmt.Sprintf("PRAGMA foreign_key_list(%s)", tableName))
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +190,7 @@ func (s *SQLiteDB) Query(sqlQuery string) (*models.QueryResult, error) {
 		return nil, fmt.Errorf("only SELECT queries are allowed for query operations")
 	}
 
-	rows, err := s.sqlDB.Query(sqlQuery)
+	rows, err := s.db.Query(sqlQuery)
 	if err != nil {
 		s.logger.Error("Query execution failed", zap.Error(err))
 		return nil, fmt.Errorf("query execution failed")
@@ -227,7 +239,7 @@ func (s *SQLiteDB) Execute(sqlQuery string) (*models.ExecuteResult, error) {
 		return nil, fmt.Errorf("SELECT queries should use the query operation instead")
 	}
 
-	result, err := s.sqlDB.Exec(sqlQuery)
+	result, err := s.db.Exec(sqlQuery)
 	if err != nil {
 		s.logger.Error("Statement execution failed", zap.Error(err))
 		return nil, fmt.Errorf("statement execution failed")
@@ -250,8 +262,8 @@ func (s *SQLiteDB) Execute(sqlQuery string) (*models.ExecuteResult, error) {
 }
 
 func (s *SQLiteDB) Close() error {
-	if s.sqlDB != nil {
-		return s.sqlDB.Close()
+	if s.db != nil {
+		return s.db.Close()
 	}
 	return nil
 }
