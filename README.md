@@ -21,17 +21,17 @@ The MCP server exposes three main tools:
 
 #### query
 
-- Description: Execute SELECT queries against the SQLite database
+- Description: Execute read-only queries against the SQLite database.
 - Parameters: 
-  - `sql` (required): SELECT query to execute
+  - `sql` (required): Read-only SQL query to execute
 -Usage: Only SELECT, WITH, and EXPLAIN queries are allowed
 - Example: `SELECT * FROM users WHERE age > 25`
 
 #### execute
 
-- Description: Execute DDL/DML operations against the SQLite database
+- Description: Execute write operations against the SQLite database
 - Parameters:
-  - `sql` (required): SQL statement to execute (non-SELECT operations)
+  - `sql` (required): SQL statement that modifies the database
 - Usage: INSERT, UPDATE, DELETE, CREATE, ALTER, DROP operations
 - Example: `INSERT INTO users (name, email) VALUES ('John Doe', 'john@example.com')`
 
