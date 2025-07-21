@@ -50,7 +50,7 @@ func (s *SQLiteDB) GetSchema() ([]models.Table, error) {
 	// Convert GORM query to direct SQL
 	rows, err := s.db.Query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
 	if err != nil {
-		s.logger.Error("Failed to retrieve table names", zap.Error(err))
+		s.logger.Errorf("Failed to retrieve table names: %v", err)
 		return nil, fmt.Errorf("failed to retrieve table information")
 	}
 	defer rows.Close()
@@ -59,7 +59,7 @@ func (s *SQLiteDB) GetSchema() ([]models.Table, error) {
 	for rows.Next() {
 		var tableName string
 		if err := rows.Scan(&tableName); err != nil {
-			s.logger.Error("Failed to scan table name", zap.Error(err))
+			s.logger.Errorf("Failed to scan table name: %v", err)
 			continue
 		}
 		tableNames = append(tableNames, tableName)
@@ -67,7 +67,7 @@ func (s *SQLiteDB) GetSchema() ([]models.Table, error) {
 
 	// Check for errors during iteration
 	if err := rows.Err(); err != nil {
-		s.logger.Error("Error during table name iteration", zap.Error(err))
+		s.logger.Errorf("Error during table name iteration: %v", err)
 		return nil, fmt.Errorf("failed to retrieve table information")
 	}
 
@@ -76,13 +76,13 @@ func (s *SQLiteDB) GetSchema() ([]models.Table, error) {
 	for _, tableName := range tableNames {
 		tableInfo, err := s.getTableInfo(tableName)
 		if err != nil {
-			s.logger.Error("Failed to get table info", zap.String("table", tableName), zap.Error(err))
+			s.logger.Errorf("Failed to get table info for table %s: %v", tableName, err)
 			continue
 		}
 		tables = append(tables, *tableInfo)
 	}
 
-	s.logger.Info("Successfully retrieved table information", zap.Int("table_count", len(tables)))
+	s.logger.Infof("Successfully retrieved table information, table_count: %d", len(tables))
 	return tables, nil
 }
 
@@ -184,7 +184,7 @@ func (s *SQLiteDB) getTableInfo(tableName string) (*models.Table, error) {
 }
 
 func (s *SQLiteDB) Query(sqlQuery string) (*models.QueryResult, error) {
-	s.logger.Debug("Executing query", zap.String("query", sanitizeQuery(sqlQuery)))
+	s.logger.Debugf("Executing query: %s", sanitizeQuery(sqlQuery))
 
 	if !isSelectQuery(sqlQuery) {
 		return nil, fmt.Errorf("only SELECT queries are allowed for query operations")
@@ -192,7 +192,7 @@ func (s *SQLiteDB) Query(sqlQuery string) (*models.QueryResult, error) {
 
 	rows, err := s.db.Query(sqlQuery)
 	if err != nil {
-		s.logger.Error("Query execution failed", zap.Error(err))
+		s.logger.Errorf("Query execution failed: %v", err)
 		return nil, fmt.Errorf("query execution failed")
 	}
 	defer rows.Close()
@@ -228,12 +228,12 @@ func (s *SQLiteDB) Query(sqlQuery string) (*models.QueryResult, error) {
 		Count:   len(results),
 	}
 
-	s.logger.Info("Query executed successfully", zap.Int("rows_returned", len(results)))
+	s.logger.Infof("Query executed successfully, rows_returned: %d", len(results))
 	return result, nil
 }
 
 func (s *SQLiteDB) Execute(sqlQuery string) (*models.ExecuteResult, error) {
-	s.logger.Debug("Executing statement", zap.String("query", sanitizeQuery(sqlQuery)))
+	s.logger.Debugf("Executing statement: %s", sanitizeQuery(sqlQuery))
 
 	if isSelectQuery(sqlQuery) {
 		return nil, fmt.Errorf("SELECT queries should use the query operation instead")
@@ -241,7 +241,7 @@ func (s *SQLiteDB) Execute(sqlQuery string) (*models.ExecuteResult, error) {
 
 	result, err := s.db.Exec(sqlQuery)
 	if err != nil {
-		s.logger.Error("Statement execution failed", zap.Error(err))
+		s.logger.Errorf("Statement execution failed: %v", err)
 		return nil, fmt.Errorf("statement execution failed")
 	}
 
@@ -254,9 +254,7 @@ func (s *SQLiteDB) Execute(sqlQuery string) (*models.ExecuteResult, error) {
 		Message:      fmt.Sprintf("Statement executed successfully, %d rows affected", rowsAffected),
 	}
 
-	s.logger.Info("Statement executed successfully",
-		zap.Int64("rows_affected", rowsAffected),
-		zap.Int64("last_insert_id", lastInsertId))
+	s.logger.Infof("Statement executed successfully, rows_affected: %d, last_insert_id: %d", rowsAffected, lastInsertId)
 
 	return executeResult, nil
 }
