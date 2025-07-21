@@ -274,8 +274,9 @@ func isSelectQuery(query string) bool {
 		strings.HasPrefix(trimmed, "EXPLAIN")
 }
 
+// TODO: To be improved with more complex sanitization logic
+// sanitizeQuery sanitizes the SQL query string
 func sanitizeQuery(query string) string {
-	// Basic sanitization for logging - remove potential sensitive data patterns
 	if len(query) > 100 {
 		return query[:97] + "..."
 	}

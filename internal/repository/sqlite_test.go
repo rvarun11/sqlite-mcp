@@ -44,7 +44,7 @@ func setupTestDB(t *testing.T) (*SQLiteDB, func()) {
 	return db, cleanup
 }
 
-func TestListTables(t *testing.T) {
+func TestGetSchema(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -66,7 +66,7 @@ func TestListTables(t *testing.T) {
 	}
 }
 
-func TestQueryDatabase(t *testing.T) {
+func TestQuery(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -91,7 +91,7 @@ func TestQueryDatabase(t *testing.T) {
 	}
 }
 
-func TestExecuteDatabase(t *testing.T) {
+func TestExecute(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
