@@ -128,7 +128,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	}()
 
 	// Start server
-	// TODO: Look into how you want to start the server
+	// TODO: Look into alternatives for transport layer (sse, streamable-http)
 	logger.Info("SQLite MCP Server started successfully")
 	if err := server.ServeStdio(mcpServer); err != nil {
 		fmt.Printf("Server error: %v\n", err)
