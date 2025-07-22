@@ -21,7 +21,9 @@ func NewLogger(cfg *config.Config) (*zap.SugaredLogger, error) {
 // NewTestLogger is a helper for tests
 func NewTestLogger() *zap.SugaredLogger {
 	config := zap.NewDevelopmentConfig()
-	config.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
+	config.Level = zap.NewAtomicLevelAt(zap.PanicLevel)
+	config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	config.EncoderConfig.EncodeTime = zapcore.TimeEncoderOfLayout(time.Kitchen)
 	logger, _ := config.Build()
 	return logger.Sugar()
 }
