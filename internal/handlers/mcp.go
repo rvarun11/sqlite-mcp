@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"github.com/rvarun11/sqlite-mcp/internal/models"
 	"github.com/rvarun11/sqlite-mcp/internal/repository"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"go.uber.org/zap"
@@ -48,7 +50,7 @@ func (h *MCPHandler) GetSchema(ctx context.Context, request mcp.CallToolRequest)
 	}, nil
 }
 
-func (h *MCPHandler) QueryDatabase(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (h *MCPHandler) Query(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	h.logger.Info("Handling queryDatabase request")
 
 	sql, ok := request.Params.Arguments.(map[string]any)["sql"].(string)
@@ -88,7 +90,7 @@ func (h *MCPHandler) QueryDatabase(ctx context.Context, request mcp.CallToolRequ
 	}, nil
 }
 
-func (h *MCPHandler) ExecuteDatabase(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (h *MCPHandler) Execute(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	h.logger.Info("Handling executeDatabase request")
 
 	sql, ok := request.Params.Arguments.(map[string]any)["sql"].(string)
@@ -138,7 +140,30 @@ func formatTablesResponse(tables []models.Table) string {
 	response := "Database Tables:\n\n"
 	for _, table := range tables {
 		response += "Table: " + table.Name + "\n"
-		// ... existing column and index formatting ...
+
+		if len(table.Columns) > 0 {
+			response += "Columns:\n"
+			for _, col := range table.Columns {
+				response += "  - " + col.Name + " (" + col.Type + ")"
+				if col.NotNull {
+					response += " NOT NULL"
+				}
+				if col.PrimaryKey {
+					response += " PRIMARY KEY"
+				}
+				if col.DefaultValue != nil {
+					response += " DEFAULT " + *col.DefaultValue
+				}
+				response += "\n"
+			}
+		}
+
+		if len(table.Indexes) > 0 {
+			response += "Indexes:\n"
+			for _, index := range table.Indexes {
+				response += "  - " + index + "\n"
+			}
+		}
 
 		if len(table.ForeignKeys) > 0 {
 			response += "Foreign Keys:\n"
@@ -160,9 +185,9 @@ func formatTablesResponse(tables []models.Table) string {
 }
 
 func formatQueryResponse(result *models.QueryResult) string {
-	response := "Query Results:\n"
-	response += "Columns: " + joinStrings(result.Columns, ", ") + "\n"
-	response += "Row Count: " + intToString(result.Count) + "\n\n"
+	response := fmt.Sprintf("Query Results:\nColumns: %s\nRow Count: %d\n\n",
+		strings.Join(result.Columns, ", "),
+		result.Count)
 
 	if result.Count > 0 {
 		response += "Data:\n"
@@ -171,14 +196,18 @@ func formatQueryResponse(result *models.QueryResult) string {
 				response += "... (showing first 10 rows)\n"
 				break
 			}
-			response += "Row " + intToString(i+1) + ": "
-			for j, col := range result.Columns {
-				if j > 0 {
-					response += ", "
+
+			response += fmt.Sprintf("Row %d: ", i+1)
+
+			var pairs []string
+			for _, col := range result.Columns {
+				value := row[col]
+				if value == nil {
+					value = "<NULL>"
 				}
-				response += col + "=" + interfaceToString(row[col])
+				pairs = append(pairs, fmt.Sprintf("%s=%v", col, value))
 			}
-			response += "\n"
+			response += strings.Join(pairs, ", ") + "\n"
 		}
 	}
 
@@ -187,81 +216,10 @@ func formatQueryResponse(result *models.QueryResult) string {
 
 func formatExecuteResponse(result *models.ExecuteResult) string {
 	response := "Execution Result:\n"
-	response += "Rows Affected: " + int64ToString(result.RowsAffected) + "\n"
+	response += fmt.Sprintf("Rows Affected: %d\n", result.RowsAffected)
 	if result.LastInsertId > 0 {
-		response += "Last Insert ID: " + int64ToString(result.LastInsertId) + "\n"
+		response += fmt.Sprintf("Last Insert ID: %d\n", result.LastInsertId)
 	}
 	response += "Message: " + result.Message + "\n"
 	return response
-}
-
-// Helper utility functions
-func joinStrings(strs []string, separator string) string {
-	if len(strs) == 0 {
-		return ""
-	}
-	result := strs[0]
-	for i := 1; i < len(strs); i++ {
-		result += separator + strs[i]
-	}
-	return result
-}
-
-func intToString(n int) string {
-	return int64ToString(int64(n))
-}
-
-func int64ToString(n int64) string {
-	if n == 0 {
-		return "0"
-	}
-
-	negative := n < 0
-	if negative {
-		n = -n
-	}
-
-	digits := ""
-	for n > 0 {
-		digits = string(rune('0'+(n%10))) + digits
-		n /= 10
-	}
-
-	if negative {
-		digits = "-" + digits
-	}
-
-	return digits
-}
-
-func interfaceToString(v any) string {
-	if v == nil {
-		return "<NULL>"
-	}
-
-	switch val := v.(type) {
-	case string:
-		return val
-	case int:
-		return intToString(val)
-	case int64:
-		return int64ToString(val)
-	case float64:
-		return floatToString(val)
-	case bool:
-		if val {
-			return "true"
-		}
-		return "false"
-	default:
-		return "<unknown>"
-	}
-}
-
-func floatToString(f float64) string {
-	// Simple float to string conversion
-	if f == float64(int64(f)) {
-		return int64ToString(int64(f))
-	}
-	return "<float>"
 }

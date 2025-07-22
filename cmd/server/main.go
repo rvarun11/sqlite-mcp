@@ -96,7 +96,7 @@ func runServer(cmd *cobra.Command, args []string) {
 		mcp.WithDestructiveHintAnnotation(false),
 		mcp.WithIdempotentHintAnnotation(true),
 	)
-	mcpServer.AddTool(queryDatabaseTool, mcpHandler.QueryDatabase)
+	mcpServer.AddTool(queryDatabaseTool, mcpHandler.Query)
 
 	// Execute Database Tool
 	executeDatabaseTool := mcp.NewTool("execute",
@@ -111,7 +111,7 @@ func runServer(cmd *cobra.Command, args []string) {
 		mcp.WithDestructiveHintAnnotation(true),
 		mcp.WithIdempotentHintAnnotation(false),
 	)
-	mcpServer.AddTool(executeDatabaseTool, mcpHandler.ExecuteDatabase)
+	mcpServer.AddTool(executeDatabaseTool, mcpHandler.Execute)
 
 	//Setup graceful shutdown
 	_, cancel := context.WithCancel(context.Background())
