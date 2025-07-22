@@ -1,13 +1,6 @@
 # SQLite MCP Server
 
-A Model Context Protocol (MCP) server for SQLite database operations. This server provides a standardized interface for SQLite database interactions including schema introspection, query execution, and database modifications.
-
-## Features
-
-- **get_schema**: Complete schema introspection with column details, types, constraints, and indexes
-- **query(sql)**: Safe execution of SELECT queries with result formatting  
-- **execute(sql)**: Execution of DDL/DML operations (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, etc.)
-- Built-in SQL operation validation and sanitized error messages
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for SQLite database operations. This server provides a standardized interface for SQLite database interactions including schema inspection, read and write operations.
 
 ## Available Tools
 
