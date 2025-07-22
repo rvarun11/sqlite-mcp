@@ -47,7 +47,6 @@ func (s *SQLiteDB) GetSchema() ([]models.Table, error) {
 
 	var tableNames []string
 
-	// Convert GORM query to direct SQL
 	rows, err := s.db.Query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
 	if err != nil {
 		s.logger.Errorf("Failed to retrieve table names: %v", err)
