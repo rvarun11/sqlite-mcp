@@ -25,6 +25,10 @@ tasks:
     cmds:
       - go test ./...
 
+  check:
+    desc: Run fmt, lint and unit tests
+    deps: [fmt, lint, test]
+
   build-example-db:
     desc: Create example db from example.sql
     cmds:
@@ -44,7 +48,7 @@ tasks:
 
   build:
     desc: Build the binary
-    deps: [test, build-example-db]
+    deps: [build-example-db]
     cmds:
       - go build -o {{.BUILD_DIR}}/{{.BINARY_NAME}} {{.MAIN_PATH}}
 
