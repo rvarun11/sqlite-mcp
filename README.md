@@ -115,10 +115,9 @@ Available tasks include:
 - `fmt`: Tidy modules and format code
 - `lint`: Run `goclangci-lint` static analysis
 - `test:` Run unit tests
-- `check`: Run all the code quality checks including `fmt`, `lint`, and `test`
 - `build-example-db`: Create example db from `example.sql`
-- `run-dev`: Run from source with example db, includes all checks
-- `build`: Build the binary with example db, including all checks
+- `run-dev`: Run from source with example db, includes tests
+- `build`: Build the binary with example db, including test
 - `docker-build`: Build Docker image
 
 
