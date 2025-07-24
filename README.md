@@ -36,6 +36,7 @@ The MCP server exposes three main tools:
 - **Go**: SQLite MCP Server requires Go 1.24.4 or later. Download from [go.dev/doc/install](https://go.dev/doc/install)
 - **Task**: Install [go-task](https://taskfile.dev/) to run automated development tasks. Install using Homebrew with `brew install go-task`
 - **SQLite3**: For creating and managing SQLite databases locally
+- **golangci-lint**: Go linter. Install using Homebrew with `brew install golangci-lint` or follow instructions at [golangci-lint.run](https://golangci-lint.run/) (optional)
 - **Docker**: To run the server with Docker (optional)
 
 ### Installation
