@@ -15,10 +15,10 @@ func setupTestDB(t *testing.T) (*SQLiteDB, func()) {
 	}
 	tmpfile.Close()
 
-	logger := logger.NewTestLogger()
-	db, err := NewSQLiteDB(tmpfile.Name(), logger)
+	log := logger.NewTestLogger()
+	db, err := NewSQLiteDBFromPath(tmpfile.Name(), log)
 	if err != nil {
-		logger.Errorf("Failed to initialize test database: %v", err)
+		log.Errorf("Failed to initialize test database: %v", err)
 	}
 
 	// Create test table

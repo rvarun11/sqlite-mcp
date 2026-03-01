@@ -2,23 +2,25 @@ package config
 
 import (
 	"errors"
+	"path/filepath"
+
 	"github.com/spf13/cobra"
 	"os"
 )
 
 type Config struct {
-	DatabasePath string
+	DatabasePath string // Empty string means no database at startup
 	Debug        bool
 }
 
 func NewConfig(cmd *cobra.Command) (*Config, error) {
 	dbPath, _ := cmd.Flags().GetString("database")
-	if dbPath == "" {
-		return nil, errors.New("database path is required")
-	}
 
-	if err := validateDatabasePath(dbPath); err != nil {
-		return nil, err
+	// Only validate the path when one is actually provided.
+	if dbPath != "" {
+		if err := validateDatabasePath(dbPath); err != nil {
+			return nil, err
+		}
 	}
 
 	debug, _ := cmd.Flags().GetBool("debug")
@@ -31,22 +33,10 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 
 func validateDatabasePath(dbPath string) error {
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		dir := dbPath[:len(dbPath)-len(dbPath[findLastSlash(dbPath):])]
-		if dir == "" {
-			dir = "."
-		}
+		dir := filepath.Dir(dbPath)
 		if _, err := os.Stat(dir); os.IsNotExist(err) {
 			return errors.New("database directory does not exist")
 		}
 	}
 	return nil
-}
-
-func findLastSlash(path string) int {
-	for i := len(path) - 1; i >= 0; i-- {
-		if path[i] == '/' || path[i] == '\\' {
-			return i
-		}
-	}
-	return -1
 }

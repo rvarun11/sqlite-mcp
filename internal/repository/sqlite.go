@@ -2,10 +2,15 @@ package repository
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
-	_ "github.com/mattn/go-sqlite3"
-	"github.com/rvarun11/sqlite-mcp/internal/models"
+	"os"
 	"strings"
+	"sync"
+
+	_ "github.com/mattn/go-sqlite3"
+
+	"github.com/rvarun11/sqlite-mcp/internal/models"
 
 	"go.uber.org/zap"
 )
@@ -13,41 +18,81 @@ import (
 var _ Repository = (*SQLiteDB)(nil)
 
 type SQLiteDB struct {
+	mu     sync.RWMutex
 	db     *sql.DB
 	logger *zap.SugaredLogger
 }
 
-func NewSQLiteDB(dbPath string, logger *zap.SugaredLogger) (*SQLiteDB, error) {
-	// Open SQLite database directly
-	db, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
-	}
-
-	// Test the connection
-	if err := db.Ping(); err != nil {
-		db.Close() // Clean up on ping failure
-		return nil, fmt.Errorf("failed to ping database: %w", err)
-	}
-
-	// Configure connection pool
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-
-	logger.Infof("Connected to SQLite database: %v", dbPath)
-
-	return &SQLiteDB{
-		db:     db,
-		logger: logger,
-	}, nil
+// NewSQLiteDB creates an SQLiteDB without opening a database.
+// Call Open to connect to a specific file.
+func NewSQLiteDB(logger *zap.SugaredLogger) *SQLiteDB {
+	return &SQLiteDB{logger: logger}
 }
+
+// Open connects to the SQLite database at dbPath, replacing any existing
+// connection. The path must point to an existing file.
+func (s *SQLiteDB) Open(dbPath string) error {
+	// Validate that the file exists — we do not create new databases via this
+	// method (creation is only allowed through the CLI flag at startup).
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return fmt.Errorf("database file does not exist: %s", dbPath)
+	}
+
+	newDB, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+
+	if err := newDB.Ping(); err != nil {
+		newDB.Close()
+		return fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	newDB.SetMaxOpenConns(25)
+	newDB.SetMaxIdleConns(5)
+
+	s.mu.Lock()
+	old := s.db
+	s.db = newDB
+	s.mu.Unlock()
+
+	if old != nil {
+		if err := old.Close(); err != nil {
+			s.logger.Warnf("Failed to close previous database connection: %v", err)
+		}
+	}
+
+	s.logger.Infof("Connected to SQLite database: %v", dbPath)
+	return nil
+}
+
+// NewSQLiteDBFromPath is a convenience constructor that opens the database
+// immediately. It is used during startup when --database is provided.
+func NewSQLiteDBFromPath(dbPath string, logger *zap.SugaredLogger) (*SQLiteDB, error) {
+	s := NewSQLiteDB(logger)
+	if err := s.Open(dbPath); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// ErrNoDatabase is an error returned by handlers if no database is open.
+var ErrNoDatabase = errors.New("no database is open")
 
 func (s *SQLiteDB) GetSchema() ([]models.Table, error) {
 	s.logger.Debug("Get database schema")
 
+	s.mu.RLock()
+	db := s.db
+	s.mu.RUnlock()
+
+	if db == nil {
+		return nil, ErrNoDatabase
+	}
+
 	var tableNames []string
 
-	rows, err := s.db.Query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
 	if err != nil {
 		s.logger.Errorf("Failed to retrieve table names: %v", err)
 		return nil, fmt.Errorf("failed to retrieve table information")
@@ -73,7 +118,7 @@ func (s *SQLiteDB) GetSchema() ([]models.Table, error) {
 	tables := make([]models.Table, 0, len(tableNames))
 
 	for _, tableName := range tableNames {
-		tableInfo, err := s.getTableInfo(tableName)
+		tableInfo, err := s.getTableInfo(db, tableName)
 		if err != nil {
 			s.logger.Errorf("Failed to get table info for table %s: %v", tableName, err)
 			continue
@@ -85,10 +130,10 @@ func (s *SQLiteDB) GetSchema() ([]models.Table, error) {
 	return tables, nil
 }
 
-func (s *SQLiteDB) getTableInfo(tableName string) (*models.Table, error) {
+func (s *SQLiteDB) getTableInfo(db *sql.DB, tableName string) (*models.Table, error) {
 	// Get column information
 	var columns []models.Column
-	rows, err := s.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", tableName))
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", tableName))
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +166,7 @@ func (s *SQLiteDB) getTableInfo(tableName string) (*models.Table, error) {
 
 	// Get index information
 	var indexes []string
-	indexRows, err := s.db.Query(fmt.Sprintf("PRAGMA index_list(%s)", tableName))
+	indexRows, err := db.Query(fmt.Sprintf("PRAGMA index_list(%s)", tableName))
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +190,7 @@ func (s *SQLiteDB) getTableInfo(tableName string) (*models.Table, error) {
 	}
 
 	var foreignKeys []models.ForeignKey
-	fkRows, err := s.db.Query(fmt.Sprintf("PRAGMA foreign_key_list(%s)", tableName))
+	fkRows, err := db.Query(fmt.Sprintf("PRAGMA foreign_key_list(%s)", tableName))
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +234,15 @@ func (s *SQLiteDB) Query(sqlQuery string) (*models.QueryResult, error) {
 		return nil, fmt.Errorf("only SELECT queries are allowed for query operations")
 	}
 
-	rows, err := s.db.Query(sqlQuery)
+	s.mu.RLock()
+	db := s.db
+	s.mu.RUnlock()
+
+	if db == nil {
+		return nil, ErrNoDatabase
+	}
+
+	rows, err := db.Query(sqlQuery)
 	if err != nil {
 		s.logger.Errorf("Query execution failed: %v", err)
 		return nil, fmt.Errorf("query execution failed")
@@ -238,7 +291,15 @@ func (s *SQLiteDB) Execute(sqlQuery string) (*models.ExecuteResult, error) {
 		return nil, fmt.Errorf("SELECT queries should use the query operation instead")
 	}
 
-	result, err := s.db.Exec(sqlQuery)
+	s.mu.RLock()
+	db := s.db
+	s.mu.RUnlock()
+
+	if db == nil {
+		return nil, ErrNoDatabase
+	}
+
+	result, err := db.Exec(sqlQuery)
 	if err != nil {
 		s.logger.Errorf("Statement execution failed: %v", err)
 		return nil, fmt.Errorf("statement execution failed")
@@ -259,8 +320,13 @@ func (s *SQLiteDB) Execute(sqlQuery string) (*models.ExecuteResult, error) {
 }
 
 func (s *SQLiteDB) Close() error {
-	if s.db != nil {
-		return s.db.Close()
+	s.mu.Lock()
+	db := s.db
+	s.db = nil
+	s.mu.Unlock()
+
+	if db != nil {
+		return db.Close()
 	}
 	return nil
 }

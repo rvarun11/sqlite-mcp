@@ -1,20 +1,20 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
 	"github.com/rvarun11/sqlite-mcp/internal/config"
 	"github.com/rvarun11/sqlite-mcp/internal/handlers"
 	"github.com/rvarun11/sqlite-mcp/internal/logger"
 	"github.com/rvarun11/sqlite-mcp/internal/repository"
-	"os"
-
-	"context"
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
-	"os/signal"
-	"syscall"
 )
 
 var dbPath string
@@ -27,13 +27,8 @@ func main() {
 		Run:   runServer,
 	}
 
-	rootCmd.Flags().StringVarP(&dbPath, "database", "d", "", "Path to SQLite database file (required)")
+	rootCmd.Flags().StringVarP(&dbPath, "database", "d", "", "Path to SQLite database file (optional; if omitted, call open_database before using other tools)")
 	rootCmd.Flags().Bool("debug", false, "Enable debug mode")
-
-	err := rootCmd.MarkFlagRequired("database")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error marking database flag as required: %v\n", err)
-	}
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -50,31 +45,49 @@ func runServer(cmd *cobra.Command, args []string) {
 	}
 
 	// Initialize logger
-	logger, err := logger.NewLogger(cfg)
+	log, err := logger.NewLogger(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
 		os.Exit(1)
 	}
-	defer syncLogger(logger)
+	defer syncLogger(log)
 
-	logger.Infof("Starting SQLite MCP Server: %v", dbPath)
-
-	// Initialize database
-	repo, err := repository.NewSQLiteDB(cfg.DatabasePath, logger)
-	if err != nil {
-		logger.Fatalf("Failed to initialize database: %v", err)
-	}
+	// Initialize repository (connection opened below if --database was provided)
+	repo := repository.NewSQLiteDB(log)
 	defer repo.Close()
 
+	if cfg.DatabasePath != "" {
+		log.Infof("Opening database at startup: %s", cfg.DatabasePath)
+		if err := repo.Open(cfg.DatabasePath); err != nil {
+			log.Fatalf("Failed to open database: %v", err)
+		}
+	} else {
+		log.Info("No database specified at startup — awaiting open_database tool call")
+	}
+
 	// Initialize MCP handler
-	mcpHandler := handlers.NewMCPHandler(repo, logger)
+	mcpHandler := handlers.NewMCPHandler(repo, log)
 
 	mcpServer := server.NewMCPServer(
 		"sqlite-mcp",
 		"1.0.0",
 	)
 
-	// Get Schema Tool - No parameters needed
+	// Open Database Tool
+	openDatabaseTool := mcp.NewTool("open_database",
+		mcp.WithDescription("Open a SQLite database file, closing any previously open database. Must be called before using other tools when no --database flag was provided at startup."),
+		mcp.WithString("path",
+			mcp.Required(),
+			mcp.Description("Absolute path to the SQLite database file to open. The file must already exist."),
+			mcp.MinLength(1),
+		),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(false),
+	)
+	mcpServer.AddTool(openDatabaseTool, mcpHandler.OpenDatabase)
+
+	// Get Schema Tool
 	listTablesTool := mcp.NewTool("get_schema",
 		mcp.WithDescription("List all tables in the SQLite database with their schema information including columns, types, constraints, and indexes"),
 		mcp.WithReadOnlyHintAnnotation(true),
@@ -100,7 +113,7 @@ func runServer(cmd *cobra.Command, args []string) {
 
 	// Execute Database Tool
 	executeDatabaseTool := mcp.NewTool("execute",
-		mcp.WithDescription("Execute DDL/DML operations (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, etc.) against the SQLite database. SELECT queries are not allowed - use queryDatabase instead."),
+		mcp.WithDescription("Execute DDL/DML operations (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, etc.) against the SQLite database. SELECT queries are not allowed - use query instead."),
 		mcp.WithString("sql",
 			mcp.Required(),
 			mcp.Description("SQL statement to execute (non-SELECT operations only)"),
@@ -113,28 +126,27 @@ func runServer(cmd *cobra.Command, args []string) {
 	)
 	mcpServer.AddTool(executeDatabaseTool, mcpHandler.Execute)
 
-	//Setup graceful shutdown
+	// Setup graceful shutdown
 	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Handle shutdown signals
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		<-sigChan
-		logger.Info("Received shutdown signal, gracefully shutting down...")
+		log.Info("Received shutdown signal, gracefully shutting down...")
 		cancel()
 	}()
 
 	// Start server
 	// TODO: Look into alternatives for transport layer (sse, streamable-http)
-	logger.Info("SQLite MCP Server started successfully")
+	log.Info("SQLite MCP Server started successfully")
 	if err := server.ServeStdio(mcpServer); err != nil {
-		fmt.Printf("Server error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 	}
 
-	logger.Info("SQLite MCP Server stopped")
+	log.Info("SQLite MCP Server stopped")
 }
 
 func syncLogger(logger *zap.SugaredLogger) {
