@@ -1,0 +1,7 @@
+version: "2"
+
+linters:
+  exclusions:
+    presets:
+      # Keep golangci-lint v1's default of not flagging unchecked Close/Remove errors
+      - std-error-handling
