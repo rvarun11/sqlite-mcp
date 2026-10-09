@@ -406,6 +406,28 @@ func TestMCPHandler_Execute_MissingSQL(t *testing.T) {
 	}
 }
 
+func TestMCPHandler_MalformedArguments(t *testing.T) {
+	handler, cleanup := setupTestMCPHandler(t)
+	defer cleanup()
+
+	// Clients may omit arguments or send a non-object; this must yield a tool error, not a panic
+	for name, args := range map[string]any{"nil": nil, "string": "SELECT 1", "non-string sql": map[string]any{"sql": 1}} {
+		t.Run(name, func(t *testing.T) {
+			request := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: args}}
+
+			queryResult, err := handler.Query(context.Background(), request)
+			if err != nil || !queryResult.IsError {
+				t.Errorf("Expected Query error result, got %+v, err %v", queryResult, err)
+			}
+
+			executeResult, err := handler.Execute(context.Background(), request)
+			if err != nil || !executeResult.IsError {
+				t.Errorf("Expected Execute error result, got %+v, err %v", executeResult, err)
+			}
+		})
+	}
+}
+
 func TestMCPHandler_Execute_InvalidSQL(t *testing.T) {
 	handler, cleanup := setupTestMCPHandler(t)
 	defer cleanup()

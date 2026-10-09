@@ -53,8 +53,8 @@ func (h *MCPHandler) GetSchema(ctx context.Context, request mcp.CallToolRequest)
 func (h *MCPHandler) Query(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	h.logger.Info("Handling queryDatabase request")
 
-	sql, ok := request.Params.Arguments.(map[string]any)["sql"].(string)
-	if !ok || sql == "" {
+	sql, err := request.RequireString("sql")
+	if err != nil || sql == "" {
 		return &mcp.CallToolResult{
 			IsError: true,
 			Content: []mcp.Content{
@@ -93,8 +93,8 @@ func (h *MCPHandler) Query(ctx context.Context, request mcp.CallToolRequest) (*m
 func (h *MCPHandler) Execute(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	h.logger.Info("Handling executeDatabase request")
 
-	sql, ok := request.Params.Arguments.(map[string]any)["sql"].(string)
-	if !ok {
+	sql, err := request.RequireString("sql")
+	if err != nil {
 		// handle error - sql argument missing or not a string
 		return &mcp.CallToolResult{
 			IsError: true,
